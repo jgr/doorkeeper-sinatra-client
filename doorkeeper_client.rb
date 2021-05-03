@@ -89,7 +89,13 @@ class DoorkeeperClient < Sinatra::Base
   end
 
   def confidential_client
-    OAuth2::Client.new(app.confidential_client_id, app.confidential_client_secret, site: app.provider_url)
+    OAuth2::Client.new(
+      app.confidential_client_id,
+      app.confidential_client_secret,
+      site: app.provider_url,
+      authorize_url: '/ws/oauth/authorize',
+      token_url: '/ws/oauth/token'
+    )
   end
 
   def access_token
@@ -125,7 +131,7 @@ class DoorkeeperClient < Sinatra::Base
 
     client.auth_code.authorize_url(
       redirect_uri: app.confidential_client_redirect_uri,
-      scope: 'read',
+      scope: 'search',
       state: generate_state!,
       code_challenge_method: code_challenge_method,
       code_challenge: code_challenge
