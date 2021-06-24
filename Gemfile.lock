@@ -1,6 +1,19 @@
+GIT
+  remote: git://github.com/jgr/signet.git
+  revision: 3039150b308a7a630727529eb7c1712cc64a5b96
+  branch: ignore-https
+  specs:
+    signet (0.15.0)
+      addressable (~> 2.3)
+      faraday (>= 0.17.3, < 2.0)
+      jwt (>= 1.5, < 3.0)
+      multi_json (~> 1.10)
+
 GEM
   remote: https://rubygems.org/
   specs:
+    addressable (2.7.0)
+      public_suffix (>= 2.0.2, < 5.0)
     ast (2.4.2)
     coderay (1.1.3)
     dotenv (2.7.6)
@@ -9,26 +22,20 @@ GEM
       multipart-post (>= 1.2, < 3)
       ruby2_keywords
     faraday-net_http (1.0.1)
-    jwt (2.2.2)
+    jwt (2.2.3)
     method_source (1.0.0)
     multi_json (1.15.0)
-    multi_xml (0.6.0)
     multipart-post (2.1.1)
     mustermann (1.1.1)
       ruby2_keywords (~> 0.0.1)
     nio4r (2.5.5)
-    oauth2 (1.4.7)
-      faraday (>= 0.8, < 2.0)
-      jwt (>= 1.0, < 3.0)
-      multi_json (~> 1.3)
-      multi_xml (~> 0.5)
-      rack (>= 1.2, < 3)
     parallel (1.20.1)
     parser (3.0.1.0)
       ast (~> 2.4.1)
     pry (0.14.1)
       coderay (~> 1.1)
       method_source (~> 1.0)
+    public_suffix (4.0.6)
     puma (5.2.2)
       nio4r (~> 2.0)
     rack (2.2.3)
@@ -65,12 +72,12 @@ PLATFORMS
 
 DEPENDENCIES
   dotenv
-  oauth2
   pry
   puma
   redcarpet
   rollbar
   rubocop
+  signet!
   sinatra
 
 RUBY VERSION

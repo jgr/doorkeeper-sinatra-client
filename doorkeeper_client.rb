@@ -5,6 +5,7 @@ require 'securerandom'
 require 'singleton'
 require 'dotenv/load'
 require './lib/html_renderer'
+require 'signet/oauth_2/client'
 
 Rollbar.configure do |config|
   config.access_token = ENV['ROLLBAR_ACCESS_TOKEN']
@@ -13,21 +14,19 @@ end
 class App
   include Singleton
 
-  attr_accessor :public_client_id,
-                :public_client_redirect_uri,
-                :confidential_client_id,
+  attr_accessor :confidential_client_id,
                 :confidential_client_secret,
                 :confidential_client_redirect_uri,
-                :provider_url
+                :authorization_url,
+                :token_url
 end
 
 App.instance.tap do |app|
-  app.public_client_id = ENV['PUBLIC_CLIENT_ID']
-  app.public_client_redirect_uri = ENV['PUBLIC_CLIENT_REDIRECT_URI']
   app.confidential_client_id = ENV['CONFIDENTIAL_CLIENT_ID']
   app.confidential_client_secret = ENV['CONFIDENTIAL_CLIENT_SECRET']
   app.confidential_client_redirect_uri = ENV['CONFIDENTIAL_CLIENT_REDIRECT_URI']
-  app.provider_url = ENV['PROVIDER_URL']
+  app.authorization_url = ENV['AUTHORIZATION_URL']
+  app.token_url = ENV['TOKEN_URL']
 end
 
 class DoorkeeperClient < Sinatra::Base
@@ -72,7 +71,7 @@ class DoorkeeperClient < Sinatra::Base
     end
 
     def site_host
-      URI.parse(app.provider_url).host
+      URI.parse(app.authorization_url).host
     end
   end
 
@@ -80,62 +79,24 @@ class DoorkeeperClient < Sinatra::Base
     App.instance
   end
 
-  def client
-    public_send("#{session[:client]}_client")
-  end
-
-  def public_client
-    OAuth2::Client.new(app.public_client_id, nil, site: app.provider_url)
-  end
-
-  def confidential_client
-    OAuth2::Client.new(
-      app.confidential_client_id,
-      app.confidential_client_secret,
-      site: app.provider_url,
-      authorize_url: '/ws/oauth/authorize',
-      token_url: '/ws/oauth/token'
+  def generate_client
+    Signet::OAuth2::Client.new(
+      :authorization_uri => app.authorization_url,
+      :token_credential_uri =>  app.token_url,
+      :client_id => app.confidential_client_id,
+      :client_secret => app.confidential_client_secret,
+      :scope => 'search',
+      :state => state,
+      :redirect_uri => app.confidential_client_redirect_uri
     )
-  end
-
-  def access_token
-    OAuth2::AccessToken.new(client, session[:access_token], refresh_token: session[:refresh_token])
   end
 
   def generate_state!
     session[:state] = SecureRandom.hex
   end
 
-  def generate_code_verifier!
-    session[:code_verifier] = SecureRandom.uuid
-  end
-
   def state
     session[:state]
-  end
-
-  def code_verifier
-    session[:code_verifier]
-  end
-
-  def code_challenge_method
-    'S256'
-  end
-
-  def code_challenge
-    Base64.urlsafe_encode64(Digest::SHA256.digest(session[:code_verifier])).split('=').first
-  end
-
-  def authorize_url_for_client(type)
-    session[:client] = type
-
-    client.auth_code.authorize_url(
-      redirect_uri: app.confidential_client_redirect_uri,
-      scope: 'search',
-      state: generate_state!,
-      code_challenge_method: code_challenge_method,
-      code_challenge: code_challenge
-    )
   end
 
   get '/' do
@@ -143,13 +104,8 @@ class DoorkeeperClient < Sinatra::Base
   end
 
   get '/sign_in' do
-    generate_code_verifier!
-    redirect authorize_url_for_client(:confidential)
-  end
-
-  get '/public_sign_in' do
-    generate_code_verifier!
-    redirect authorize_url_for_client(:public)
+    generate_state!
+    redirect generate_client.authorization_uri
   end
 
   get '/sign_out' do
@@ -167,41 +123,26 @@ class DoorkeeperClient < Sinatra::Base
         return
       end
 
-      new_token =
-        client
-        .auth_code
-        .get_token(
-          params[:code],
-          redirect_uri: app.confidential_client_redirect_uri,
-          code_verifier: code_verifier
-        )
+      client = generate_client
+      client.code = params[:code]
+      client.fetch_access_token!
 
-      session[:access_token]  = new_token.token
-      session[:refresh_token] = new_token.refresh_token
+      session[:access_token]  = client.access_token
+      session[:refresh_token] = client.refresh_token
       redirect '/'
     end
   end
 
   get '/refresh' do
-    new_token = access_token.refresh!
-    session[:access_token]  = new_token.token
-    session[:refresh_token] = new_token.refresh_token
+    client = generate_client
+    client.access_token = session[:access_token]
+    client.refresh_token = session[:refresh_token]
+    client.refresh!
+
+    session[:access_token]  = client.access_token
+    session[:refresh_token] = client.refresh_token
     redirect '/'
-  rescue OAuth2::Error => _e
-    erb :error, layout: !request.xhr?
   rescue StandardError => _e
     erb :error, layout: !request.xhr?
-  end
-
-  get '/explore/:api' do
-    raise 'Please call a valid endpoint' unless params[:api]
-
-    begin
-      response = access_token.get("/api/v1/#{params[:api]}")
-      @json = JSON.parse(response.body)
-      erb :explore, layout: !request.xhr?
-    rescue OAuth2::Error => _e
-      erb :error, layout: !request.xhr?
-    end
   end
 end
